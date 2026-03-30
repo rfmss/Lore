@@ -4,8 +4,8 @@ var Engine = (function () {
   var _story = null;
   var _nodeId = null;
   var _timers = [];
-  var _shownIds = {};  // eventId -> true (para resume)
-  var _history = [];   // [{type, text}]
+  var _shownIds = {};
+  var _history = [];
   var _msgEl = null;
   var _typingEl = null;
   var _choicesEl = null;
@@ -47,9 +47,9 @@ var Engine = (function () {
   }
 
   function _showTyping() {
-    if (_typingEl) _typingEl.style.display = '-webkit-flex';
-    if (_typingEl) _typingEl.style.display = 'flex';
+    if (_typingEl) { _typingEl.style.display = '-webkit-flex'; _typingEl.style.display = 'flex'; }
     if (_statusEl) _statusEl.textContent = 'digitando...';
+    _scrollBottom();
   }
 
   function _hideTyping() {
@@ -89,80 +89,88 @@ var Engine = (function () {
     _timers = [];
   }
 
-  function _delay(fn, ms) {
+  function _later(fn, ms) {
     var t = setTimeout(fn, ms);
     _timers.push(t);
   }
 
-  /* ── story processing ── */
+  /* ── story processing ──
+     Cada evento usa delay relativo ao anterior (não acumulado).
+     Os callbacks sempre chamam _processEvents com idx+1, zero acumulado.
+  ── */
   function _processNode(nodeId) {
     _nodeId = nodeId;
     _save();
     var node = _story.nodes[nodeId];
     if (!node) return;
-    _processEvents(node, 0, 0);
+    _processEvents(node, 0);
   }
 
-  // accumulated: total ms elapsed within this node (for positioning typing indicator)
-  function _processEvents(node, idx, accumulated) {
+  function _processEvents(node, idx) {
     if (idx >= node.length) return;
+
     var ev = node[idx];
     var evId = _nodeId + '.' + idx;
 
+    /* ── mensagem de personagem ── */
     if (ev.t === 'msg' || ev.t === 'unknown') {
-      var msgDelay = ev.delay || 0;
-      var totalDelay = accumulated + msgDelay;
-      var typingDelay = Math.max(totalDelay - 600, accumulated + 50);
+      var d = ev.delay || 0;
 
       if (_shownIds[evId]) {
-        // already shown — skip with 0 delay
-        _processEvents(node, idx + 1, accumulated);
+        // já mostrada — pula instantaneamente
+        _processEvents(node, idx + 1);
         return;
       }
 
-      if (msgDelay === 0) {
-        var type = ev.from === 'unknown' ? 'unknown' : 'char';
+      var from = ev.from || ev.t;
+      var type = (from === 'unknown') ? 'unknown' : 'char';
+
+      if (d <= 0) {
         _appendMsg(type, ev.text, false);
         _history.push({ type: type, text: ev.text });
         _shownIds[evId] = true;
         _save();
-        _processEvents(node, idx + 1, accumulated);
+        _processEvents(node, idx + 1);
       } else {
-        _delay(function () { _showTyping(); }, typingDelay);
-        _delay(function () {
-          _hideTyping();
-          var type = ev.from === 'unknown' ? 'unknown' : 'char';
-          _appendMsg(type, ev.text, false);
-          _history.push({ type: type, text: ev.text });
-          _shownIds[evId] = true;
-          _save();
-          _processEvents(node, idx + 1, totalDelay);
-        }, totalDelay);
+        // mostra "digitando..." 700ms antes
+        var typingIn = Math.max(d - 700, 50);
+        _later(function () { _showTyping(); }, typingIn);
+        _later((function (evId2, type2, ev2, node2, idx2) {
+          return function () {
+            _hideTyping();
+            _appendMsg(type2, ev2.text, false);
+            _history.push({ type: type2, text: ev2.text });
+            _shownIds[evId2] = true;
+            _save();
+            _processEvents(node2, idx2 + 1);
+          };
+        })(evId, type, ev, node, idx), d);
       }
 
+    /* ── mensagem de sistema ── */
     } else if (ev.t === 'sys') {
-      if (_shownIds[evId]) {
-        _processEvents(node, idx + 1, accumulated);
-        return;
-      }
-      _delay(function () {
-        _appendMsg('sys', ev.text, false);
-        _history.push({ type: 'sys', text: ev.text });
-        _shownIds[evId] = true;
-        _save();
-        _processEvents(node, idx + 1, accumulated + 500);
-      }, accumulated + 300);
+      if (_shownIds[evId]) { _processEvents(node, idx + 1); return; }
+      _later((function (evId2, ev2, node2, idx2) {
+        return function () {
+          _appendMsg('sys', ev2.text, false);
+          _history.push({ type: 'sys', text: ev2.text });
+          _shownIds[evId2] = true;
+          _save();
+          _processEvents(node2, idx2 + 1);
+        };
+      })(evId, ev, node, idx), 400);
 
+    /* ── escolha ── */
     } else if (ev.t === 'choice') {
-      _delay(function () {
-        _showChoices(ev.opts);
-      }, accumulated + 200);
+      _later(function () { _showChoices(ev.opts); }, 200);
 
+    /* ── goto ── */
     } else if (ev.t === 'goto') {
-      _delay(function () {
-        _processNode(ev.next);
-      }, accumulated + 100);
+      _later((function (next) {
+        return function () { _processNode(next); };
+      })(ev.next), 80);
 
+    /* ── fim ── */
     } else if (ev.t === 'end') {
       _nodeId = null;
       _save();
@@ -181,7 +189,6 @@ var Engine = (function () {
       var saved = _load();
 
       if (saved && saved.history && saved.history.length > 0) {
-        // Resume: replay history instantly
         _history = saved.history;
         _shownIds = saved.shownIds || {};
         for (var i = 0; i < _history.length; i++) {
