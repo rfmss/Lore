@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#090D1A">
+<title>LORE</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Splash -->
+<div id="splash">
+  <div class="sp-bg"></div>
+  <div class="sp-body">
+    <div class="sp-logo">LORE</div>
+    <div class="sp-tagline">uma história em tempo real</div>
+    <div class="sp-notif">
+      <div class="sp-notif-icon">✉</div>
+      <div>
+        <div class="sp-notif-from">contato desconhecido</div>
+        <div class="sp-notif-word">rosebud</div>
+      </div>
+    </div>
+    <button class="sp-btn" id="sp-btn">abrir</button>
+  </div>
+</div>
+
+<!-- Chat -->
+<div id="chat" style="display:none">
+  <div class="chat-header">
+    <div class="char-avatar" id="char-avatar"></div>
+    <div>
+      <div class="char-name" id="char-name"></div>
+      <div class="char-handle" id="char-handle"></div>
+      <div class="char-status" id="char-status">online</div>
+    </div>
+  </div>
+
+  <div class="messages" id="messages"></div>
+
+  <div class="typing-bar" id="typing-bar" style="display:none">
+    <div class="typing-avatar-sm"></div>
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <div class="choices" id="choices"></div>
+</div>
+
+<script src="perce.js"></script>
+<script src="engine.js"></script>
+<script>
+// ES5 — sem arrow functions, sem const/let, sem template literals
+var _chat = document.getElementById('chat');
+var _splash = document.getElementById('splash');
+var _spBtn = document.getElementById('sp-btn');
+
+// Injeta avatar e info da personagem
+document.getElementById('char-avatar').innerHTML = PERCE.avatar;
+document.getElementById('char-name').textContent = PERCE.name;
+document.getElementById('char-handle').textContent = PERCE.handle;
+
+function _enterChat() {
+  _splash.style.display = 'none';
+  _chat.style.display = '-webkit-flex';
+  _chat.style.display = 'flex';
+  Engine.start(PERCE, {
+    messages: document.getElementById('messages'),
+    typing:   document.getElementById('typing-bar'),
+    choices:  document.getElementById('choices'),
+    status:   document.getElementById('char-status')
+  });
+}
+
+_spBtn.addEventListener('click', _enterChat);
+_spBtn.addEventListener('touchend', function (e) { e.preventDefault(); _enterChat(); }, false);
+
+// Skip splash se já tem estado salvo
+(function () {
+  try {
+    var s = localStorage.getItem('lore_v1');
+    if (s) {
+      var d = JSON.parse(s);
+      if (d && d.history && d.history.length > 0) _enterChat();
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
